@@ -169,21 +169,19 @@ Definition zip (t : term * list term) := apps (fst t) (snd t).
 
 (** Strong call-by-name stack reduction machine. *)
 Fixpoint reduce_stack (fuel : nat) (Γ : context) (t : term) (stack : list term) : term * list term :=
-  match fuel with 0 => (t, stack) | S fuel =>
-  match t with
-  | fvar x => (fvar x, stack)
-  | bvar i => (bvar i, stack) (* This case shouldn't happen. *)
-  | app f x => reduce_stack fuel Γ f (x :: stack)
-  | lam t =>
-    match stack with
-    | [] =>
+  match fuel with
+  | 0 => (t, stack)
+  | S fuel =>
+    match t, stack with
+    | fvar x, stack => (fvar x, stack)
+    | bvar i, stack => (bvar i, stack) (* This case shouldn't happen. *)
+    | app f x, stack => reduce_stack fuel Γ f (x :: stack)
+    | lam t, [] =>
       let x := fresh_name Γ in
       let t := reduce_stack fuel (x :: Γ) (t ^ x) [] in
       (lam (zip t \^ x), [])
-    | arg :: stack =>
-      reduce_stack fuel Γ (t ^^ arg) stack
+    | lam t, arg :: stack => reduce_stack fuel Γ (t ^^ arg) stack
     end
-  end
   end.
 
 Lemma reduce_stack_correct fuel Γ t stack :

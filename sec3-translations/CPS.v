@@ -76,3 +76,37 @@ Fixpoint cps {s} (t : term s) (k : term s) {struct t} : term s :=
         LetIn x #v (cps (wk u) (wk k)
       )))
   end.
+
+(*Fixpoint term_size {s} (t : term s) : nat :=
+  match t with
+  | Var _ => 1
+  | Lam x t => 1 + term_size t
+  | App t u => 1 + term_size t + term_size u
+  | LetIn x t u => 1 + term_size t + term_size u
+  end.
+
+From Stdlib Require Import Lia.
+
+Lemma term_size_thin {s s'} (δ : thinning s s') (t : term s) :
+  term_size (thin δ t) = term_size t.
+Proof. funelim (thin δ t) ; cbn in * ; lia. Qed.
+
+Lemma term_size_wk {s s'} `{scope_incl s s'} t :
+  term_size (wk t) = term_size t.
+Proof. unfold wk. rewrite term_size_thin. reflexivity. Qed.
+
+Equations cps {s} (t k : term s) : term s by wf (term_size t) :=
+cps (Var i) k := App k (Var i) ;
+cps (Lam x t) k := App k (Lam x (mk_lam (fun k' => cps (wk t) #k'))) ;
+cps (App t u) k :=
+  cps t (mk_lam (fun x =>
+  cps (wk u) (mk_lam (fun y =>
+    App (App #x #y) (wk k))))) ;
+cps (LetIn x t u) k :=
+  cps t (mk_lam (fun v =>
+    LetIn x #v (cps (wk u) (wk k)))).
+Next Obligation. rewrite ?term_size_wk ; lia. Qed.
+Next Obligation. rewrite ?term_size_wk ; lia. Qed.
+Next Obligation. rewrite ?term_size_wk ; lia. Qed.
+Next Obligation. rewrite ?term_size_wk ; lia. Qed.
+Next Obligation. rewrite ?term_size_wk ; lia. Qed.*)

@@ -126,21 +126,17 @@ Qed.
 Definition zip {s} (t : term s * list (term s)) := apps (fst t) (snd t).
 
 (** Strong call-by-name stack reduction machine. *)
-Fixpoint reduce_stack {s} (fuel : nat) (t : term s) (stack : list (term s))
+Fixpoint reduce_stack {s} (fuel : nat) (t : term s) (ts : list (term s))
     : term s * list (term s) :=
-  match fuel with 0 => (t, stack) | S fuel =>
-  match t with
-  | var i => (var i, stack)
-  | app f arg => reduce_stack fuel f (arg :: stack)
-  | lam x t =>
-    match stack with
-    | [] =>
-      let t := reduce_stack fuel t nil in
-      (lam x (zip t), [])
-    | arg :: stack =>
-      reduce_stack fuel (t[x := arg]) stack
+  match fuel with
+  | 0 => (t, ts)
+  | S fuel =>
+    match t, ts with
+    | var i, ts => (var i, ts)
+    | app t u, us => reduce_stack fuel t (u :: us)
+    | lam x t, u :: us => reduce_stack fuel (t[x := u]) us
+    | lam x t, [] => let '(u, us) := reduce_stack fuel t nil in (lam x (apps u us), [])
     end
-  end
   end.
 
 Lemma reduce_stack_correct s fuel (t : term s) stack :
@@ -157,7 +153,8 @@ induction fuel in s, t, stack |- * ; cbn [reduce_stack].
   (* lam case *)
   + destruct stack as [| arg stack].
     (* Empty argument stack. *)
-    * specialize (IHfuel _ t nil). cbn in *. now f_equiv.
+    * specialize (IHfuel _ t nil). destruct (reduce_stack fuel t nil).
+      cbn in *. now f_equiv.
     (* Non-empty argument stack. *)
     * specialize (IHfuel _ (t[x := arg]) stack).
       cbn in *. rewrite red_beta. exact IHfuel.
