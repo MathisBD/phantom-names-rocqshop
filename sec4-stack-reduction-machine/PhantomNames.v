@@ -148,8 +148,7 @@ induction fuel in s, t, stack |- * ; cbn [reduce_stack].
   (* var case. *)
   + cbn. reflexivity.
   (* app case *)
-  + specialize (IHfuel _ t1 (t2 :: stack)). rewrite <-IHfuel.
-    cbn. reflexivity.
+  + specialize (IHfuel _ t1 (t2 :: stack)). rewrite <-IHfuel. cbn. reflexivity.
   (* lam case *)
   + destruct stack as [| arg stack].
     (* Empty argument stack. *)
