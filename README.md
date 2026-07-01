@@ -34,13 +34,13 @@ The code is split into folders which mirror the sections of the extended abstrac
   1. A CPS translation for the lambda calculus with let-in bindings.
   2. A unary parametricity translation for a dependently-typed calculus.
   3. A translation from the lambda calculus with explicity substitutions to the pi calculus.
-- `sec4-stack-reduction` proves the correctness of a basic stack reduction machine for the lambda calculus,
+- `sec4-reduction-machine` proves the correctness of a basic stack reduction machine for the lambda calculus,
   using several binder representations.
   1. `DeBruijn.v` uses (unscoped) de Bruijn indices.
   2. `PhantomNames.v` uses phantom names, and is very similar to the de Bruijn version.
-  3. `LocallyNamelessCofinite.v` is a FAILED attempt using locally nameless and cofinite quantification,
+  3. `LNcofinite.v` is a FAILED attempt using locally nameless and cofinite quantification,
       which shows exactly why cofinite quantification is insufficient.
-  4. `LocallyNameless.v` uses locally nameless.
+  4. `LNnominal.v` uses locally nameless, with many lemmas in the style of nominal logic.
 - `sec5-cc-meta-theory` formalizes the meta-theory of a variant of the calculus of constructions with evars,
   using phantom names.
 

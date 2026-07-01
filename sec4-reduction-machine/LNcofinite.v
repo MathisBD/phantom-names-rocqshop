@@ -34,6 +34,15 @@ Fixpoint apps (f : term) (xs : list term) : term :=
   | x :: xs => apps (app f x) xs
   end.
 
+(** Compute the set of free variables in a term. *)
+Fixpoint fv (t : term) : gset name :=
+  match t with
+  | fvar x => {[ x ]}
+  | bvar i => ∅
+  | app t1 t2 => fv t1 ∪ fv t2
+  | lam t => fv t
+  end.
+
 (**************************************************************************)
 (** * Opening and closing terms *)
 (**************************************************************************)
@@ -63,6 +72,114 @@ Fixpoint close_ (n : nat) (x : name) (t : term) : term :=
 
 (** [t \^ x] replaces variable [x] with de Bruijn index [0] in [t]. *)
 Notation "t '\^' x" := (close_ 0 x t) (at level 30, no associativity).
+
+(**************************************************************************)
+(** * Size of terms *)
+(**************************************************************************)
+
+(** Compute the size of a term (the number of nodes in the syntax tree).
+    We use this to perform induction on the size of terms. *)
+Fixpoint term_size (t : term) : nat :=
+  match t with
+  | fvar _ => 0
+  | bvar _ => 0
+  | app t u => 1 + term_size t + term_size u
+  | lam t => 1 + term_size t
+  end.
+
+Lemma term_size_open_var t x n :
+  term_size (open_ n (fvar x) t) = term_size t.
+Proof.
+induction t in n |- * ; cbn.
+- reflexivity.
+- destruct (Nat.eqb_spec i n) ; subst ; reflexivity.
+- rewrite IHt1, IHt2. reflexivity.
+- rewrite IHt. reflexivity.
+Qed.
+
+(**************************************************************************)
+(** * Locally closed terms *)
+(**************************************************************************)
+
+(** We formalize the notion of locally closed terms in order to state
+    and prove the lemma [open_close_same]. *)
+
+(** [lc t n] means that [t] is locally closed under [n] binders,
+    i.e. that the de Bruijn indices of [t] are smaller than [n]. *)
+Inductive lc : term -> nat -> Prop :=
+| lc_fvar x n :
+    lc (fvar x) n
+| lc_bvar i n :
+    i < n ->
+    lc (bvar i) n
+| lc_app t1 t2 n :
+    lc t1 n ->
+    lc t2 n ->
+    lc (app t1 t2) n
+| lc_lam t n :
+    lc t (n + 1) ->
+    lc (lam t) n.
+
+Lemma lc_monotone t n m :
+  n <= m -> lc t n -> lc t m.
+Proof.
+intros Hle Ht. induction Ht in m, Hle |- * ; constructor ; auto.
+- lia.
+- apply IHHt. lia.
+Qed.
+
+Lemma lc_open_var t n x :
+  lc t (n + 1) <-> lc (open_ n (fvar x) t) n.
+Proof.
+revert n. induction t ; intros n ; split ; intros H ; cbn in *.
+- constructor.
+- constructor.
+- destruct (Nat.eqb_spec i n) ; subst.
+  + constructor.
+  + inversion H ; subst. constructor. lia.
+- destruct (Nat.eqb_spec i n) ; subst.
+  + constructor. lia.
+  + constructor. inversion H ; subst. lia.
+- inversion H ; subst. constructor.
+  + now apply IHt1.
+  + now apply IHt2.
+- inversion H ; subst. constructor.
+  + now apply IHt1.
+  + now apply IHt2.
+- inversion H ; subst. clear H. constructor. now apply IHt.
+- inversion H ; subst. clear H. constructor. now apply IHt.
+Qed.
+
+Lemma lc_open t u n :
+  lc t (n + 1) -> lc u n -> lc (open_ n u t) n.
+Proof.
+revert n. induction t ; intros n H1 H2 ; cbn in *.
+- constructor.
+- destruct (Nat.eqb_spec i n) ; subst.
+  + assumption.
+  + constructor. inversion H1 ; subst. lia.
+- inversion H1 ; subst. constructor.
+  + now apply IHt1.
+  + now apply IHt2.
+- constructor. inversion H1 ; subst. apply IHt.
+  + assumption.
+  + apply lc_monotone with n ; auto. lia.
+Qed.
+
+Lemma open_close_same x t :
+  lc t 0 ->
+  (t \^ x) ^ x = t.
+Proof.
+generalize 0. induction t ; intros n H ; cbn in *.
+- destruct (Nat.eqb_spec x x0) ; subst.
+  + cbn. rewrite Nat.eqb_refl. reflexivity.
+  + cbn. reflexivity.
+- inversion H ; subst. destruct (Nat.eqb_spec i n) ; subst.
+  + lia.
+  + reflexivity.
+- inversion H ; subst. rewrite IHt1, IHt2 by assumption. reflexivity.
+- inversion H ; subst. rewrite IHt by assumption. reflexivity.
+Qed.
 
 (**************************************************************************)
 (** * Reduction relation *)
@@ -126,10 +243,9 @@ Fixpoint domain (ctx : context) : gset name :=
   | x :: ctx => {[ x ]} ∪ domain ctx
   end.
 
-(** A term is well-scoped iff all of its free variables appear in the context.
-    In particular [bvar i] is never well-scoped.
+(** A term is well-scoped iff it is locally closed and all of its free variables appear in the context.
 
-    We use cofinite quantification in the abstraction case. *)
+    We use cofinite quantification in the abstraction case.*)
 Inductive well_scoped : context -> term -> Prop :=
 | well_scoped_fvar ctx x :
     x ∈ domain ctx -> well_scoped ctx (fvar x)
@@ -141,12 +257,14 @@ Inductive well_scoped : context -> term -> Prop :=
     (forall x, x ∉ L -> well_scoped (x :: ctx) (t ^ x)) ->
     well_scoped ctx (lam t).
 
+(** Proving this lemma requires many intermediate lemmas.
+    In an attempt to keep this file relatively short
+    we omit the proof, but it can be found in the file `LNnominal.v`. *)
 Lemma well_scoped_open ctx t u :
   well_scoped ctx (lam t) ->
   well_scoped ctx u ->
   well_scoped ctx (t ^^ u).
-Proof.
-Admitted.
+Proof. Admitted.
 
 (**************************************************************************)
 (** * Stack reduction machine *)
@@ -168,25 +286,24 @@ Qed.
 Definition zip (t : term * list term) := apps (fst t) (snd t).
 
 (** Strong call-by-name stack reduction machine. *)
-Fixpoint reduce_stack (fuel : nat) (Γ : context) (t : term) (stack : list term) : term * list term :=
+Fixpoint reduce_stack (fuel : nat) (Γ : context) (t : term) (ts : list term) : term * list term :=
   match fuel with
-  | 0 => (t, stack)
+  | 0 => (t, ts)
   | S fuel =>
-    match t, stack with
-    | fvar x, stack => (fvar x, stack)
-    | bvar i, stack => (bvar i, stack) (* This case shouldn't happen. *)
-    | app f x, stack => reduce_stack fuel Γ f (x :: stack)
+    match t, ts with
+    | fvar x, ts => (fvar x, ts)
+    | bvar i, ts => (bvar 0, []) (* This case shouldn't happen. *)
+    | app t u, us => reduce_stack fuel Γ t (u :: us)
     | lam t, [] =>
       let x := fresh_name Γ in
-      let t := reduce_stack fuel (x :: Γ) (t ^ x) [] in
-      (lam (zip t \^ x), [])
-    | lam t, arg :: stack => reduce_stack fuel Γ (t ^^ arg) stack
+      let '(u, us) := reduce_stack fuel (x :: Γ) (t ^ x) [] in
+      (lam (apps u us \^ x), [])
+    | lam t, u :: us => reduce_stack fuel Γ (t ^^ u) us
     end
   end.
 
 Lemma reduce_stack_correct fuel Γ t stack :
-  well_scoped Γ t ->
-  Forall (well_scoped Γ) stack ->
+  well_scoped Γ t -> Forall (well_scoped Γ) stack ->
   apps t stack ~~> zip (reduce_stack fuel Γ t stack).
 Proof.
 induction fuel in t, stack, Γ |- * ; cbn [reduce_stack] ; intros Ht HΓ.
@@ -221,9 +338,10 @@ induction fuel in t, stack, Γ |- * ; cbn [reduce_stack] ; intros Ht HΓ.
          (the one generated by [fresh_name]).
          We would need the rule for [red1_lam] to have an existentially quantified
          premise. *)
-      apply red_lam with (domain ctx). admit.
+      (*apply red_lam with (domain ctx).*) admit.
     (* The stack is non-empty. *)
     * specialize (IHfuel ctx (t ^^ x) stack).
+      (* This case requires many *)
       forward IHfuel.
       {
         apply well_scoped_open.
@@ -234,5 +352,5 @@ induction fuel in t, stack, Γ |- * ; cbn [reduce_stack] ; intros Ht HΓ.
       rewrite <-IHfuel. cbn. rewrite red_beta. reflexivity.
 Admitted.
 
-(** The issue is that we don't get to pick the fresh name in the proof,
+(** The issue is that we don't get to pick the fresh name in the proof:
     it is instead computed by the program we are trying to verify. *)

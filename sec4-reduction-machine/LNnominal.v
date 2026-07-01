@@ -1,8 +1,8 @@
 (** This file proves the correctness of the stack reduction machine using
     locally nameless syntax, without cofinite quantification.
 
-    Instead, we use two versions for rules which involve quantification
-    over free names:
+    Instead, we follow the style of nominal logic and use two versions
+    for rules which involve quantification over free names:
     - A universally quantified version (e.g. [red_lam]) to get useful
       induction principles.
     - An existentially quantified version (e.g. [red_lam_intro]) to get
@@ -179,10 +179,20 @@ Fixpoint close_ (n : nat) (x : name) (t : term) : term :=
 (** [t \^ x] replaces variable [x] with de Bruijn index [0] in [t]. *)
 Notation "t '\^' x" := (close_ 0 x t) (at level 30, no associativity).
 
-Lemma fv_open x t :
-  fv t ⊆ fv (t ^ x).
+Lemma fv_open_1 t u :
+  fv t ⊆ fv (t ^^ u).
 Proof.
 generalize 0. induction t ; cbn in * ; set_solver.
+Qed.
+
+Lemma fv_open_2 t u :
+  fv (t ^^ u) ⊆ fv t ∪ fv u.
+Proof.
+generalize 0. induction t ; intros n ; cbn in *.
+- set_solver.
+- destruct (Nat.eqb_spec i n) ; subst ; set_solver.
+- set_solver.
+- set_solver.
 Qed.
 
 Lemma not_elem_of_fv_close t x :
@@ -224,6 +234,30 @@ generalize 0. induction t ; intros k ; cbn.
 Qed.
 
 (**************************************************************************)
+(** * Size of terms *)
+(**************************************************************************)
+
+(** Compute the size of a term (the number of nodes in the syntax tree).
+    We use this to perform induction on the size of terms. *)
+Fixpoint term_size (t : term) : nat :=
+  match t with
+  | fvar _ => 0
+  | bvar _ => 0
+  | app t u => 1 + term_size t + term_size u
+  | lam t => 1 + term_size t
+  end.
+
+Lemma term_size_open_var t x n :
+  term_size (open_ n (fvar x) t) = term_size t.
+Proof.
+induction t in n |- * ; cbn.
+- reflexivity.
+- destruct (Nat.eqb_spec i n) ; subst ; reflexivity.
+- rewrite IHt1, IHt2. reflexivity.
+- rewrite IHt. reflexivity.
+Qed.
+
+(**************************************************************************)
 (** * Locally closed terms *)
 (**************************************************************************)
 
@@ -246,6 +280,14 @@ Inductive lc : term -> nat -> Prop :=
     lc t (n + 1) ->
     lc (lam t) n.
 
+Lemma lc_monotone t n m :
+  n <= m -> lc t n -> lc t m.
+Proof.
+intros Hle Ht. induction Ht in m, Hle |- * ; constructor ; auto.
+- lia.
+- apply IHHt. lia.
+Qed.
+
 Lemma lc_open_var t n x :
   lc t (n + 1) <-> lc (open_ n (fvar x) t) n.
 Proof.
@@ -266,6 +308,22 @@ revert n. induction t ; intros n ; split ; intros H ; cbn in *.
   + now apply IHt2.
 - inversion H ; subst. clear H. constructor. now apply IHt.
 - inversion H ; subst. clear H. constructor. now apply IHt.
+Qed.
+
+Lemma lc_open t u n :
+  lc t (n + 1) -> lc u n -> lc (open_ n u t) n.
+Proof.
+revert n. induction t ; intros n H1 H2 ; cbn in *.
+- constructor.
+- destruct (Nat.eqb_spec i n) ; subst.
+  + assumption.
+  + constructor. inversion H1 ; subst. lia.
+- inversion H1 ; subst. constructor.
+  + now apply IHt1.
+  + now apply IHt2.
+- constructor. inversion H1 ; subst. apply IHt.
+  + assumption.
+  + apply lc_monotone with n ; auto. lia.
 Qed.
 
 Lemma open_close_same x t :
@@ -459,7 +517,7 @@ rewrite swap_context_free, swap_term_free by assumption.
 exact H.
 Qed.
 
-Lemma well_scoped_fv t ctx :
+Lemma well_scoped_fv ctx t :
   well_scoped ctx t ->
   fv t ⊆ domain ctx.
 Proof.
@@ -468,7 +526,7 @@ intros H. induction H ; cbn.
 - set_solver.
 - clear H. intros y Hy. destruct (exist_fresh (fv t ∪ domain ctx ∪ {[ y ]})) as [x Hx].
   specialize (H0 x). forward H0 ; [set_solver |]. forward H0 ; [set_solver |].
-  rewrite <-fv_open in H0. apply H0 in Hy. cbn in Hy. set_solver.
+  rewrite <-fv_open_1 in H0. apply H0 in Hy. cbn in Hy. set_solver.
 Qed.
 
 (** A well-scoped term is locally closed. *)
@@ -484,12 +542,35 @@ intros H. induction H ; cbn.
   rewrite <-lc_open_var in H0. assumption.
 Qed.
 
+(** An alternate characterization of well-scopedness. *)
+Lemma well_scoped_iff ctx t :
+  well_scoped ctx t <-> lc t 0 /\ fv t ⊆ domain ctx.
+Proof.
+split.
+- intros H. split ; [eapply well_scoped_lc | eapply well_scoped_fv ] ; eassumption.
+- intros [H1 H2]. remember (term_size t) as n.
+  revert ctx t H1 H2 Heqn. induction n using lt_wf_ind ; intros ctx t H1 H2 ->.
+  destruct t.
+  + constructor. set_solver.
+  + inversion H1. lia.
+  + inversion H1 ; subst. constructor ; eapply H ; eauto.
+    all: solve [cbn ; lia | set_solver].
+  + inversion H1. subst. cbn in *. constructor. intros x Hx1 Hx2.
+    eapply H ; eauto.
+    * apply lc_open_var. assumption.
+    * rewrite fv_open_2. set_solver.
+    * now rewrite term_size_open_var.
+Qed.
+
 Lemma well_scoped_open ctx t u :
   well_scoped ctx (lam t) ->
   well_scoped ctx u ->
   well_scoped ctx (t ^^ u).
 Proof.
-Admitted.
+rewrite !well_scoped_iff. intros [Ht Ht'] [Hu Hu']. split.
+- inversion Ht ; subst. apply lc_open ; assumption.
+- rewrite fv_open_2. set_solver.
+Qed.
 
 (** Reduction preserves well-scopedness. *)
 Lemma well_scoped_red ctx t t' :
